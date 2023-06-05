@@ -2700,6 +2700,7 @@ static PHYSFS_File *doOpenWrite(const char *_fname, const int appending)
             if (verifyPath(i, &arcfname, 0)) {
                 /* Set dir handle to the one from search path */
                 h = i;
+                break;
             } /* if */
         } /* for */
     } /* if */

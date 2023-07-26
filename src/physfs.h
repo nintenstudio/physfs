@@ -3914,6 +3914,30 @@ PHYSFS_DECL int PHYSFS_setRoot(const char *archive, const char *subdir);
 /* Everything above this line is part of the PhysicsFS 3.1 API. */
 
 
+typedef void* PHYSFS_Context;
+
+
+PHYSFS_DECL PHYSFS_Context PHYSFS_allocContext();
+
+
+PHYSFS_DECL void PHYSFS_deallocContext(PHYSFS_Context context);
+
+
+PHYSFS_DECL int PHYSFS_initContext(PHYSFS_Context context, const char *argv0);
+
+
+PHYSFS_DECL int PHYSFS_deinitContext(PHYSFS_Context context);
+
+
+PHYSFS_DECL int PHYSFS_bindContext(PHYSFS_Context context);
+
+
+PHYSFS_DECL PHYSFS_Context PHYSFS_getBoundContext();
+
+
+/* Everything above this line is part of the PhysicsFS 4.0 API. */
+
+
 #ifdef __cplusplus
 }
 #endif

@@ -2654,25 +2654,7 @@ static PHYSFS_File *doOpenWrite(const char *_fname, const int appending)
 
     BAIL_IF_MUTEX(!boundContext()->searchPath, PHYSFS_ERR_NOT_FOUND, boundContext()->stateLock, 0);
 
-    /* Code copied from PHYSFS_openRead() */
-    len = strlen(_fname) + boundContext()->longest_root + 2;
-    char* allocated_fname = (char *) __PHYSFS_smallAlloc(len);
-    BAIL_IF_MUTEX(!allocated_fname, PHYSFS_ERR_OUT_OF_MEMORY, boundContext()->stateLock, 0);
-    fname = allocated_fname + boundContext()->longest_root + 1;
-
-    if (sanitizePlatformIndependentPath(_fname, fname)) {
-        PHYSFS_Io *io = NULL;
-        DirHandle *i;
-
-        for (i = boundContext()->searchPath; i != NULL; i = i->next) {
-            char *arcfname = fname;
-            if (verifyPath(i, &arcfname, 0)) {
-                /* Set dir handle to the one from search path */
-                h = i;
-            } /* if */
-        } /* for */
-    } /* if */
-
+    h = boundContext()->writeDir;
     BAIL_IF_MUTEX(!h, PHYSFS_ERR_NO_WRITE_DIR, boundContext()->stateLock, 0);
 
     len = strlen(_fname) + dirHandleRootLen(h) + 1;
@@ -3515,10 +3497,11 @@ static int doDeinitContext(Context *context) {
 int PHYSFS_initContext(PHYSFS_Context _context, const char *argv0)
 {
     Context *context = (Context*)_context;
+    PHYSFS_Context boundContext;
 
     BAIL_IF(context->initialized, PHYSFS_ERR_IS_INITIALIZED, 0);
 
-    PHYSFS_Context boundContext = PHYSFS_getBoundContext();
+    boundContext = PHYSFS_getBoundContext();
     PHYSFS_bindContext(_context);
 
     if (!initializeContextMutexes(context)) goto initFailed;
@@ -3571,15 +3554,20 @@ int PHYSFS_deinitContext(PHYSFS_Context _context)
 
 int PHYSFS_bindContext(PHYSFS_Context context)
 {
+    ThreadContextMapNode *newNode;
+    ThreadContextMapNode *currentNode;
+    ThreadContextMapNode *lastNode;
+    void* threadID;
+
     __PHYSFS_platformGrabMutex(threadContextMapLock);
 
-    void *threadID = __PHYSFS_platformGetThreadID();
+    threadID = __PHYSFS_platformGetThreadID();
     
     if (!context)
         context = defaultContext;
 
-    ThreadContextMapNode *currentNode = threadContextMap;
-    ThreadContextMapNode *lastNode = threadContextMap;
+    currentNode = threadContextMap;
+    lastNode = threadContextMap;
     if (currentNode)
     {
         do
@@ -3596,7 +3584,7 @@ int PHYSFS_bindContext(PHYSFS_Context context)
     } /* if */
     else
     {
-        ThreadContextMapNode *newNode = allocator.Malloc(sizeof(ThreadContextMapNode));
+        newNode = allocator.Malloc(sizeof(ThreadContextMapNode));
         GOTO_IF(!newNode, PHYSFS_ERR_OUT_OF_MEMORY, bindFailed);
         newNode->context = context;
         newNode->threadID = threadID;
@@ -3605,7 +3593,7 @@ int PHYSFS_bindContext(PHYSFS_Context context)
         goto bindSuccess;
     } /* else */
 
-    ThreadContextMapNode *newNode = allocator.Malloc(sizeof(ThreadContextMapNode));
+    newNode = allocator.Malloc(sizeof(ThreadContextMapNode));
     GOTO_IF(!newNode, PHYSFS_ERR_OUT_OF_MEMORY, bindFailed);
     newNode->context = context;
     newNode->threadID = threadID;
@@ -3624,11 +3612,14 @@ bindFailed:
 
 PHYSFS_Context PHYSFS_getBoundContext()
 {
+    ThreadContextMapNode *currentNode;
+    void *threadID;
+
     __PHYSFS_platformGrabMutex(threadContextMapLock);
 
-    void *threadID = __PHYSFS_platformGetThreadID();
+    threadID = __PHYSFS_platformGetThreadID();
 
-    ThreadContextMapNode *currentNode = threadContextMap;
+    currentNode = threadContextMap;
     while (currentNode)
     {
         if (currentNode->threadID == threadID)

@@ -1,120 +1,106 @@
 /*
- * Homebrew Nintendo Switch support routines for PhysicsFS.
+ * Nintendo Switch support routines for PhysicsFS.
  *
  * Please see the file LICENSE.txt in the source's root directory.
  *
- *  This file was written.
  */
+
 
 #define __PHYSICSFS_INTERNAL__
 #include "physfs_platforms.h"
 
 #ifdef PHYSFS_PLATFORM_SWITCH
 
+#include <switch.h>
+
+// for getcwd
+#include <unistd.h>
+// for PATH_MAX
+#include <limits.h>
+
 #include "physfs_internal.h"
 
-int __PHYSFS_platformInit(void) {
-	return 1;
+int __PHYSFS_platformInit(void)
+{
+	return 1;  /* always succeed. */
+} /* __PHYSFS_platformInit */
+
+
+void __PHYSFS_platformDeinit(void)
+{
+	/* no-op */
+} /* __PHYSFS_platformDeinit */
+
+
+void __PHYSFS_platformDetectAvailableCDs(PHYSFS_StringCallback cb, void *data)
+{
+	/* no-op */
 }
 
-void __PHYSFS_platformDeinit(void) {
-
+char *__PHYSFS_switchCalcUserDir(void)
+{
+	/* Use the jail directory (hopefully) found before. */
+	return __PHYSFS_strdup(PHYSFS_getBaseDir());
 }
 
-void* __PHYSFS_platformOpenRead(const char* filename) {
+char *__PHYSFS_platformCalcBaseDir(const char *argv0)
+{
+	char *retval = NULL;
+	/* As there is no system-specific directory, directly inspect argv0. */
+	if (argv0 == NULL || strcmp(argv0, "") == 0)
+	{
+		/* User did not provide a path, just use the current working directory.
+		 *  As physfs should be initialized soon after application start, this
+		 *  should give us a useable directory.
+		 */
+		char fullpath[PATH_MAX];
+		if (getcwd(fullpath, sizeof(fullpath)) != NULL)
+		{
+			const size_t cwdlen = strlen(fullpath);
+			/* getcwd does not provide a trailing slash, add it. */
+			retval = (char*) allocator.Malloc(cwdlen + 2);
+			BAIL_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
+			strncpy(retval, fullpath, cwdlen);
+			retval[cwdlen] = '/';
+			retval[cwdlen + 1] = '\0';
+		}
+	}
+	else
+	{
+		/* nx-hbmenu should give us the full path of the application, this may
+		 *  reside in a subfolder. Higher level code will strip away the name
+		 *  and extension.
+		 */
+		return NULL;
+	}
 
-}
+	if (!retval)
+		/* Last resort: use `/switch` directory. */
+		retval = __PHYSFS_strdup("/switch/");
 
-void* __PHYSFS_platformOpenWrite(const char* filename) {
+	return retval;
+} /* __PHYSFS_platformCalcBaseDir */
 
-}
+char *__PHYSFS_platformCalcPrefDir(const char *org, const char *app)
+{
+	char *retval = NULL;
+	size_t len = 0;
 
-void* __PHYSFS_platformOpenAppend(const char* filename) {
+	/* Use the jail directory (hopefully) found before. This way we do not
+	 *  need to add an application folder, because it is exclusive.
+	 */
+	const char *envr = __PHYSFS_getUserDir();
+	BAIL_IF_ERRPASS(!envr, NULL);
+	const char *append = ".config/";
+	len = strlen(envr) + strlen(append) + 1;
+	retval = (char *) allocator.Malloc(len);
+	BAIL_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
+	snprintf(retval, len, "%s%s", envr, append);
 
-}
-
-PHYSFS_sint64 __PHYSFS_platformRead(void* opaque, void* buf, PHYSFS_uint64 len) {
-
-}
-
-PHYSFS_sint64 __PHYSFS_platformWrite(void* opaque, const void* buffer, PHYSFS_uint64 len) {
-
-}
-
-int __PHYSFS_platformSeek(void* opaque, PHYSFS_uint64 pos) {
-
-}
-
-PHYSFS_sint64 __PHYSFS_platformTell(void* opaque) {
-
-}
-
-PHYSFS_sint64 __PHYSFS_platformFileLength(void* handle) {
-
-}
-
-int __PHYSFS_platformStat(const char* fn, PHYSFS_Stat* stat, const int follow) {
-
-}
-
-int __PHYSFS_platformFlush(void* opaque) {
-
-}
-
-void __PHYSFS_platformClose(void* opaque) {
-
-}
-
-void __PHYSFS_platformDetectAvailableCDs(PHYSFS_StringCallback cb, void* data) {
-
-}
-
-char* __PHYSFS_platformCalcBaseDir(const char* argv0) {
-
-}
-
-char* __PHYSFS_platformCalcUserDir(void) {
-
-}
-
-char* __PHYSFS_platformCalcPrefDir(const char* org, const char* app) {
-
-}
-
-void* __PHYSFS_platformGetThreadID(void) {
-
-}
-
-PHYSFS_EnumerateCallbackResult __PHYSFS_platformEnumerate(const char* dirname, PHYSFS_EnumerateCallback callback, const char* origdir, void* callbackdata) {
-
-}
-
-int __PHYSFS_platformMkDir(const char* path) {
-
-}
-
-int __PHYSFS_platformDelete(const char* path) {
-
-}
-
-void* __PHYSFS_platformCreateMutex(void) {
-
-}
-
-void __PHYSFS_platformDestroyMutex(void* mutex) {
-
-}
-
-int __PHYSFS_platformGrabMutex(void* mutex) {
-
-}
-
-void __PHYSFS_platformReleaseMutex(void* mutex) {
-
-}
-
-#endif  /* PHYSFS_PLATFORM_SWITCH */
-
-/* end of physfs_platform_switch.c ... */
+	return retval;
+} /* __PHYSFS_platformCalcPrefDir */
 
 
+#endif /* PHYSFS_PLATFORM_SWITCH */
+
+/* end of physfs_platform_switch.cpp ... */

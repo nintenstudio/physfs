@@ -58,6 +58,9 @@ static inline PHYSFS_ErrorCode errcodeFromErrno(void)
 
 static char *getUserDirByUID(void)
 {
+#ifdef PHYSFS_PLATFORM_SWITCH
+    return __PHYSFS_switchCalcUserDir();
+#else
     uid_t uid = getuid();
     struct passwd *pw;
     char *retval = NULL;
@@ -80,11 +83,15 @@ static char *getUserDirByUID(void)
     } /* if */
     
     return retval;
+#endif
 } /* getUserDirByUID */
 
 
 char *__PHYSFS_platformCalcUserDir(void)
 {
+#ifdef PHYSFS_PLATFORM_SWITCH
+    return __PHYSFS_switchCalcUserDir();
+#endif
     char *retval = NULL;
     char *envr = getenv("HOME");
 
@@ -362,7 +369,12 @@ int __PHYSFS_platformStat(const char *fname, PHYSFS_Stat *st, const int follow)
     st->createtime = statbuf.st_ctime;
     st->accesstime = statbuf.st_atime;
 
+#ifdef PHYSFS_PLATFORM_SWITCH
+    /* shortcut */
+    st->readonly = !(statbuf.st_mode & S_IWRITE);
+#else
     st->readonly = (access(fname, W_OK) == -1);
+#endif
     return 1;
 } /* __PHYSFS_platformStat */
 

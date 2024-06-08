@@ -872,38 +872,6 @@ PHYSFS_DECL const char *PHYSFS_getWriteDir(void);
  */
 PHYSFS_DECL int PHYSFS_setWriteDir(const char *newDir);
 
-/**
- * \fn int PHYSFS_addWriteDir(const char *newDir)
- * \brief Add a write directory for PHYSFS to use to write files.
- *
- * Add a new write dir. Writes will take place to all added write dirs.
- *
- *
- *   \param newDir The new directory to be the root of the write dir,
- *                   specified in platform-dependent notation.
- *  \return non-zero on success, zero on failure.
- *           Use PHYSFS_getLastErrorCode() to obtain the specific error.
- *
- * \sa PHYSFS_addWriteDir
- */
-//PHYSFS_DECL int PHYSFS_addWriteDir(const char* newDir);
-
-/**
- * \fn int PHYSFS_removeWriteDir(const char *oldDir)
- * \brief Remove a write directory for PHYSFS to use to write files.
- *
- * Removes a write dir. Writes will no longer take place to the removed write dir.
- *
- *
- *   \param newDir The directory to be removed from writing,
- *                   specified in platform-dependent notation.
- *  \return non-zero on success, zero on failure.
- *           Use PHYSFS_getLastErrorCode() to obtain the specific error.
- *
- * \sa PHYSFS_removeWriteDir
- */
-//PHYSFS_DECL int PHYSFS_removeWriteDir(const char* oldDir);
-
 
 /**
  * \fn int PHYSFS_addToSearchPath(const char *newDir, int appendToPath)

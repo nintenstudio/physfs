@@ -1716,60 +1716,6 @@ int PHYSFS_setWriteDir(const char *newDir)
     return retval;
 } /* PHYSFS_setWriteDir */
 
-/*
-int PHYSFS_addWriteDir(const char *newDir) {
-    int retval = 1;
-
-    __PHYSFS_platformGrabMutex(boundContext()->stateLock);
-
-    if (newDir != NULL)
-    {
-        DirHandle* dh = createDirHandle(NULL, newDir, NULL, 1);
-        BAIL_IF_MUTEX_ERRPASS(!dh, boundContext()->stateLock, 0);
-        dh->next = boundContext()->writeDir;
-        boundContext()->writeDir = dh;
-    }
-
-    __PHYSFS_platformReleaseMutex(boundContext()->stateLock);
-
-    return retval;
-} /* PHSYFS_addWriteDir */
-
-//int PHYSFS_removeWriteDir(const char *oldDir) {
-//    DirHandle* i;
-//    DirHandle* prev = NULL;
-//    DirHandle* next = NULL;
-//
-//    BAIL_IF(oldDir == NULL, PHYSFS_ERR_INVALID_ARGUMENT, 0);
-
-//    __PHYSFS_platformGrabMutex(boundContext()->stateLock);
-//    for (i = boundContext()->writeDir; i != NULL; i = i->next)
-//    {
-//        if (strcmp(i->dirName, oldDir) == 0)
-//        {
-//            next = i->next;
-//            BAIL_IF_MUTEX_ERRPASS(!freeDirHandle(i, NULL),
-//                boundContext()->stateLock, 0);
-//
-//            if (prev == NULL)
-//                boundContext()->writeDir = next;
-//            else
-//                prev->next = next;
-//
-//            if (boundContext()->writeDir == NULL) { // We only care about open write handles there's no more write dirs
-//                BAIL_IF_MUTEX_ERRPASS(!freeDirHandle(boundContext()->writeDir, boundContext()->openWriteList),
-//                    boundContext()->stateLock, 0);
-//            } /* if */
-
-//            BAIL_MUTEX_ERRPASS(boundContext()->stateLock, 1);
-//        } /* if */
-//        prev = i;
-//    } /* for */
-
-//    BAIL_MUTEX(PHYSFS_ERR_NOT_MOUNTED, boundContext()->stateLock, 0);
-//} /* PHYSFS_removeWriteDir */
-
-
 int PHYSFS_setRoot(const char *archive, const char *subdir)
 {
     DirHandle *i;

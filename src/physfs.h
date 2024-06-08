@@ -728,6 +728,21 @@ PHYSFS_DECL const char *PHYSFS_getDirSeparator(void);
  */
 PHYSFS_DECL void PHYSFS_permitSymbolicLinks(int allow);
 
+/**
+ * \fn void PHYSFS_permitDanglingWriteHandles(int allow)
+ * \brief Enable or disable dangling write handles.
+ *
+ * When enabled, PHYSFS_setWriteDir() will not fail when write handles are open.
+ * This can be used to write to multiple write directories at once, for example.
+ *
+ * This can be enabled or disabled at any time after
+ *  you've called PHYSFS_init(), and is disabled by default.
+ *
+ *   \param allow nonzero to permit symlinks, zero to deny linking.
+ *
+ * \sa PHYSFS_permitDanglingWriteHandles
+ */
+PHYSFS_DECL void PHYSFS_permitDanglingWriteHandles(int allow);
 
 /**
  * \fn char **PHYSFS_getCdRomDirs(void)
@@ -856,6 +871,38 @@ PHYSFS_DECL const char *PHYSFS_getWriteDir(void);
  * \sa PHYSFS_getWriteDir
  */
 PHYSFS_DECL int PHYSFS_setWriteDir(const char *newDir);
+
+/**
+ * \fn int PHYSFS_addWriteDir(const char *newDir)
+ * \brief Add a write directory for PHYSFS to use to write files.
+ *
+ * Add a new write dir. Writes will take place to all added write dirs.
+ *
+ *
+ *   \param newDir The new directory to be the root of the write dir,
+ *                   specified in platform-dependent notation.
+ *  \return non-zero on success, zero on failure.
+ *           Use PHYSFS_getLastErrorCode() to obtain the specific error.
+ *
+ * \sa PHYSFS_addWriteDir
+ */
+//PHYSFS_DECL int PHYSFS_addWriteDir(const char* newDir);
+
+/**
+ * \fn int PHYSFS_removeWriteDir(const char *oldDir)
+ * \brief Remove a write directory for PHYSFS to use to write files.
+ *
+ * Removes a write dir. Writes will no longer take place to the removed write dir.
+ *
+ *
+ *   \param newDir The directory to be removed from writing,
+ *                   specified in platform-dependent notation.
+ *  \return non-zero on success, zero on failure.
+ *           Use PHYSFS_getLastErrorCode() to obtain the specific error.
+ *
+ * \sa PHYSFS_removeWriteDir
+ */
+//PHYSFS_DECL int PHYSFS_removeWriteDir(const char* oldDir);
 
 
 /**
@@ -1093,6 +1140,23 @@ PHYSFS_DECL int PHYSFS_delete(const char *filename);
  *             the file in question. NULL if not found.
  */
 PHYSFS_DECL const char *PHYSFS_getRealDir(const char *filename);
+
+/**
+* \fn const char *PHYSFS_getRealDir(const char *filename)
+* \brief Figure out where in the search path a file resides.
+* Similar to PHYSFS_getRealDir, but returns an array of real dirs in order of 
+* first in search path to last in search path.
+* 
+*  * \warning This will return NULL if there is no real directory associated
+*          with (filename). Specifically, PHYSFS_mountIo(),
+*          PHYSFS_mountMemory(), and PHYSFS_mountHandle() will return NULL
+*          even if the filename is found in the search path. Plan accordingly.
+*
+*     \param filename file to look for.
+*    \return Array of READ ONLY strings of element of search path containing the
+*             the file in question. NULL if not found.
+*/
+PHYSFS_DECL void PHYSFS_getRealDirs(const char* fname, const char*** names, int* namesCount);
 
 
 /**

@@ -85,6 +85,7 @@ typedef struct Context
     char *userDir;
     char *prefDir;
     int allowSymLinks;
+    int permitDanglingWriteHandles;
     PHYSFS_Archiver **archivers;
     PHYSFS_ArchiveInfo **archiveInfo;
     volatile size_t numArchivers;
@@ -1699,8 +1700,8 @@ int PHYSFS_setWriteDir(const char *newDir)
 
     if (boundContext()->writeDir != NULL)
     {
-        BAIL_IF_MUTEX_ERRPASS(!freeDirHandle(boundContext()->writeDir, boundContext()->openWriteList),
-                            boundContext()->stateLock, 0);
+        BAIL_IF_MUTEX_ERRPASS(!freeDirHandle(boundContext()->writeDir, boundContext()->openWriteList) && !boundContext()->permitDanglingWriteHandles,
+            boundContext()->stateLock, 0);
         boundContext()->writeDir = NULL;
     } /* if */
 
@@ -1714,6 +1715,59 @@ int PHYSFS_setWriteDir(const char *newDir)
 
     return retval;
 } /* PHYSFS_setWriteDir */
+
+/*
+int PHYSFS_addWriteDir(const char *newDir) {
+    int retval = 1;
+
+    __PHYSFS_platformGrabMutex(boundContext()->stateLock);
+
+    if (newDir != NULL)
+    {
+        DirHandle* dh = createDirHandle(NULL, newDir, NULL, 1);
+        BAIL_IF_MUTEX_ERRPASS(!dh, boundContext()->stateLock, 0);
+        dh->next = boundContext()->writeDir;
+        boundContext()->writeDir = dh;
+    }
+
+    __PHYSFS_platformReleaseMutex(boundContext()->stateLock);
+
+    return retval;
+} /* PHSYFS_addWriteDir */
+
+//int PHYSFS_removeWriteDir(const char *oldDir) {
+//    DirHandle* i;
+//    DirHandle* prev = NULL;
+//    DirHandle* next = NULL;
+//
+//    BAIL_IF(oldDir == NULL, PHYSFS_ERR_INVALID_ARGUMENT, 0);
+
+//    __PHYSFS_platformGrabMutex(boundContext()->stateLock);
+//    for (i = boundContext()->writeDir; i != NULL; i = i->next)
+//    {
+//        if (strcmp(i->dirName, oldDir) == 0)
+//        {
+//            next = i->next;
+//            BAIL_IF_MUTEX_ERRPASS(!freeDirHandle(i, NULL),
+//                boundContext()->stateLock, 0);
+//
+//            if (prev == NULL)
+//                boundContext()->writeDir = next;
+//            else
+//                prev->next = next;
+//
+//            if (boundContext()->writeDir == NULL) { // We only care about open write handles there's no more write dirs
+//                BAIL_IF_MUTEX_ERRPASS(!freeDirHandle(boundContext()->writeDir, boundContext()->openWriteList),
+//                    boundContext()->stateLock, 0);
+//            } /* if */
+
+//            BAIL_MUTEX_ERRPASS(boundContext()->stateLock, 1);
+//        } /* if */
+//        prev = i;
+//    } /* for */
+
+//    BAIL_MUTEX(PHYSFS_ERR_NOT_MOUNTED, boundContext()->stateLock, 0);
+//} /* PHYSFS_removeWriteDir */
 
 
 int PHYSFS_setRoot(const char *archive, const char *subdir)
@@ -2059,6 +2113,11 @@ void PHYSFS_permitSymbolicLinks(int allow)
     boundContext()->allowSymLinks = allow;
 } /* PHYSFS_permitSymbolicLinks */
 
+void PHYSFS_permitDanglingWriteHandles(int allow)
+{
+    boundContext()->permitDanglingWriteHandles = allow;
+} /* PHYSFS_permitDanglingWriteHandles */
+
 
 int PHYSFS_symbolicLinksPermitted(void)
 {
@@ -2318,11 +2377,98 @@ static DirHandle *getRealDirHandle(const char *_fname)
     return retval;
 } /* getRealDirHandle */
 
+/** Primary difference between this and non - plural version is that
+ * this creates new dirhandles and hands over ownership.
+ * (This is because it needs to construct a new list.)
+ */
+static DirHandle* getRealDirHandles(const char* _fname)
+{
+    DirHandle* retval = NULL;
+    char* allocated_fname = NULL;
+    char* fname = NULL;
+    size_t len;
+
+    BAIL_IF(!_fname, PHYSFS_ERR_INVALID_ARGUMENT, NULL);
+
+    __PHYSFS_platformGrabMutex(boundContext()->stateLock);
+    len = strlen(_fname) + boundContext()->longest_root + 2;
+    allocated_fname = __PHYSFS_smallAlloc(len);
+    BAIL_IF_MUTEX(!allocated_fname, PHYSFS_ERR_OUT_OF_MEMORY, boundContext()->stateLock, NULL);
+    fname = allocated_fname + boundContext()->longest_root + 1;
+    if (sanitizePlatformIndependentPath(_fname, fname))
+    {
+        DirHandle* i;
+        for (i = boundContext()->searchPath; i != NULL; i = i->next)
+        {
+            char* arcfname = fname;
+            if (partOfMountPoint(i, arcfname))
+            {
+                DirHandle* head = allocator.Malloc(sizeof(DirHandle));
+                head->dirName = i->dirName;
+                head->funcs = i->funcs;
+                head->mountPoint = i->mountPoint;
+                head->opaque = i->opaque;
+                head->root = i->root;
+                head->rootlen = i->rootlen;
+
+                head->next = retval;
+                retval = head;
+            } /* if */
+            else if (verifyPath(i, &arcfname, 0))
+            {
+                PHYSFS_Stat statbuf;
+                if (i->funcs->stat(i->opaque, arcfname, &statbuf))
+                {
+                    DirHandle* head = allocator.Malloc(sizeof(DirHandle));
+                    head->dirName = i->dirName;
+                    head->funcs = i->funcs;
+                    head->mountPoint = i->mountPoint;
+                    head->opaque = i->opaque;
+                    head->root = i->root;
+                    head->rootlen = i->rootlen;
+
+                    head->next = retval;
+                    retval = head;
+                } /* if */
+            } /* if */
+        } /* for */
+    } /* if */
+
+    __PHYSFS_platformReleaseMutex(boundContext()->stateLock);
+    __PHYSFS_smallFree(allocated_fname);
+    return retval;
+} /* getRealDirHandles */
+
 const char *PHYSFS_getRealDir(const char *fname)
 {
     DirHandle *dh = getRealDirHandle(fname);
     return dh ? dh->dirName : NULL;
 } /* PHYSFS_getRealDir */
+
+void PHYSFS_getRealDirs(const char* fname, const char*** names, int* namesCount)
+{
+    int idx = 0;
+    DirHandle* lastHandle = NULL;
+    DirHandle* dh = getRealDirHandles(fname);
+
+    *names = NULL;
+    *namesCount = 0;
+
+    for (DirHandle* i = dh; i != NULL; i = i->next) {
+        (*namesCount)++;
+    } /* for */
+    (*names) = allocator.Malloc(sizeof(const char*) * (*namesCount));
+    for (DirHandle* i = dh; i != NULL; i = i->next) {
+        if (lastHandle != NULL) {
+            allocator.Free(lastHandle);
+        } /* if */
+        (*names)[idx] = i->dirName;
+        lastHandle = i;
+        idx++;
+    } /* for */
+    if (lastHandle != NULL)
+        allocator.Free(lastHandle);
+} /* PHYSFS_getRealDirs */
 
 
 static int locateInStringList(const char *str,
@@ -2644,7 +2790,7 @@ int PHYSFS_isSymbolicLink(const char *fname)
 static PHYSFS_File *doOpenWrite(const char *_fname, const int appending)
 {
     FileHandle *fh = NULL;
-    DirHandle *h;
+    DirHandle *h = NULL;
     size_t len;
     char *fname;
 
@@ -3484,6 +3630,7 @@ static int doDeinitContext(Context *context) {
 
     context->longest_root = 0;
     context->allowSymLinks = 0;
+    context->permitDanglingWriteHandles = 0;
     context->initialized = 0;
 
     if (context->errorLock) __PHYSFS_platformDestroyMutex(context->errorLock);

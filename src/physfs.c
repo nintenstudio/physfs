@@ -10,6 +10,7 @@
 
 #define __PHYSICSFS_INTERNAL__
 #include "physfs_internal.h"
+#include "crc_32.h"
 
 #if defined(_MSC_VER)
 /* this code came from https://stackoverflow.com/a/8712996 */
@@ -43,6 +44,7 @@ typedef struct __PHYSFS_DIRHANDLE__
 {
     void *opaque;  /* Instance data unique to the archiver. */
     char *dirName;  /* Path to archive in platform-dependent notation. */
+    PHYSFS_uint32 dir_crc;
     char *mountPoint; /* Mountpoint in virtual file tree. */
     char *root;  /* subdirectory of archiver to use as root of archive (NULL for actual root) */
     size_t rootlen;  /* subdirectory of archiver to use as root of archive (NULL for actual root) */
@@ -71,6 +73,10 @@ typedef struct __PHYSFS_ERRSTATETYPE__
     struct __PHYSFS_ERRSTATETYPE__ *next;
 } ErrState;
 
+enum {
+    PHYSFS_SEARCHPATH_BUCKETS = 192,
+    PHYSFS_SEARCHPATH_BUCKET_SIZE = 128,
+};
 
 /* General PhysicsFS state ... */
 typedef struct Context
@@ -78,6 +84,8 @@ typedef struct Context
     int initialized;
     ErrState *errorStates;
     DirHandle *searchPath;
+    DirHandle* searchPathEnd;
+    PHYSFS_uint32 searchPathBuckets[PHYSFS_SEARCHPATH_BUCKETS][PHYSFS_SEARCHPATH_BUCKET_SIZE];
     DirHandle *writeDir;
     FileHandle *openWriteList;
     FileHandle *openReadList;
@@ -1085,6 +1093,7 @@ static DirHandle *createDirHandle(PHYSFS_Io *io, const char *newDir,
     } /* if */
 
     __PHYSFS_smallFree(tmpmntpnt);
+    dirHandle->dir_crc = crc32buf(dirHandle->dirName, strlen(dirHandle->dirName));
     return dirHandle;
 
 badDirHandle:
@@ -1768,8 +1777,7 @@ static int doMount(PHYSFS_Io *io, const char *fname,
                    const char *mountPoint, int appendToPath)
 {
     DirHandle *dh;
-    DirHandle *prev = NULL;
-    DirHandle *i;
+    PHYSFS_uint32 i;
 
     BAIL_IF(!fname, PHYSFS_ERR_INVALID_ARGUMENT, 0);
 
@@ -1777,24 +1785,55 @@ static int doMount(PHYSFS_Io *io, const char *fname,
         mountPoint = "/";
 
     __PHYSFS_platformGrabMutex(boundContext()->stateLock);
+    PHYSFS_uint32 fname_crc = crc32buf(fname, strlen(fname));
+    unsigned int bucket = fname_crc % PHYSFS_SEARCHPATH_BUCKETS;
 
-    for (i = boundContext()->searchPath; i != NULL; i = i->next)
+    /* already in search path? */
+    for (i = 0; i < PHYSFS_SEARCHPATH_BUCKET_SIZE; i++)
     {
-        /* already in search path? */
-        if ((i->dirName != NULL) && (strcmp(fname, i->dirName) == 0))
+        PHYSFS_uint32 hash;
+        hash = boundContext()->searchPathBuckets[bucket][i];
+        // We went through all the hashes in this bucket and found an empty one.
+        if (hash == 0) {
+            break;
+        }
+        // This archive name is a duplicate, bail out!
+        else if (fname_crc == hash) {
             BAIL_MUTEX_ERRPASS(boundContext()->stateLock, 1);
-        prev = i;
+        }
+
     } /* for */
+
+    // If the hash bucket is full, we need to resort to a full linear search.
+    if (i >= PHYSFS_SEARCHPATH_BUCKET_SIZE - 1)
+    {
+        DirHandle* j;
+        for (j = boundContext()->searchPath; j != NULL; j = j->next)
+        {
+            if (fname_crc == j->dir_crc) {
+                BAIL_MUTEX_ERRPASS(boundContext()->stateLock, 1);
+            }
+        }
+    }
 
     dh = createDirHandle(io, fname, mountPoint, 0);
     BAIL_IF_MUTEX_ERRPASS(!dh, boundContext()->stateLock, 0);
 
+    // Insert the hash, if we haven't already filled the bucket.
+    if (i < PHYSFS_SEARCHPATH_BUCKET_SIZE - 1) {
+        // Because of our loop, i is already the index of the next empty spot in
+        // the bucket. Insert the hash.
+        boundContext()->searchPathBuckets[bucket][i] = fname_crc;
+    }
+
     if (appendToPath)
     {
-        if (prev == NULL)
+        if (boundContext()->searchPath == NULL)
             boundContext()->searchPath = dh;
         else
-            prev->next = dh;
+            boundContext()->searchPathEnd->next = dh;
+
+        boundContext()->searchPathEnd = dh;
     } /* if */
     else
     {

@@ -75,6 +75,7 @@ endif()
 #  code and #define the things you want.
 set(PHYSFS_SRCS
     src/physfs.c
+    src/crc_32.c
     src/physfs_byteorder.c
     src/physfs_unicode.c
     src/physfs_platform_posix.c

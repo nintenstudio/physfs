@@ -1828,17 +1828,21 @@ static int doMount(PHYSFS_Io *io, const char *fname,
 
     if (appendToPath)
     {
-        if (boundContext()->searchPath == NULL)
+        if (boundContext()->searchPath == NULL) {
             boundContext()->searchPath = dh;
-        else
+            boundContext()->searchPathEnd = dh;
+        }
+        else {
             boundContext()->searchPathEnd->next = dh;
-
-        boundContext()->searchPathEnd = dh;
+            boundContext()->searchPathEnd = dh;
+        }
     } /* if */
     else
     {
         dh->next = boundContext()->searchPath;
         boundContext()->searchPath = dh;
+        if (boundContext()->searchPathEnd == NULL)
+            boundContext()->searchPathEnd = dh;
     } /* else */
 
     __PHYSFS_platformReleaseMutex(boundContext()->stateLock);

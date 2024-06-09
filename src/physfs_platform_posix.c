@@ -230,6 +230,11 @@ void *__PHYSFS_platformOpenWrite(const char *filename)
     return doOpen(filename, O_WRONLY | O_CREAT | O_TRUNC);
 } /* __PHYSFS_platformOpenWrite */
 
+void* __PHYSFS_platformOpenReadWrite(const char* filename)
+{
+    return doOpen(filename, O_RDWR | O_CREAT);
+} /* __PHYSFS_platformOpenWrite */
+
 
 void *__PHYSFS_platformOpenAppend(const char *filename)
 {
@@ -301,6 +306,13 @@ PHYSFS_sint64 __PHYSFS_platformFileLength(void *opaque)
     BAIL_IF(fstat(fd, &statbuf) == -1, errcodeFromErrno(), -1);
     return ((PHYSFS_sint64) statbuf.st_size);
 } /* __PHYSFS_platformFileLength */
+
+int __PHYSFS_platformTrunc(void* opaque, PHYSFS_uint64 len)
+{
+    const int fd = *((int*)opaque);
+    BAIL_IF(ftruncate(fd, len) == -1, errcodeFromErrno(), -1);
+    return 1;
+} /* __PHYSFS_platformTrunc */
 
 
 int __PHYSFS_platformFlush(void *opaque)

@@ -1491,6 +1491,22 @@ PHYSFS_DECL int PHYSFS_seek(PHYSFS_File *handle, PHYSFS_uint64 pos);
  */
 PHYSFS_DECL PHYSFS_sint64 PHYSFS_fileLength(PHYSFS_File *handle);
 
+/**
+ * \fn PHYSFS_sint64 PHYSFS_fileLength(PHYSFS_File *handle)
+ * \brief Get total length of a file in bytes.
+ *
+ * Note that if another process/thread is writing to this file at the same
+ *  time, then the information this function supplies could be incorrect
+ *  before you get it. Use with caution, or better yet, don't use at all.
+ *
+ *   \param handle handle returned from PHYSFS_open*().
+ *  \return nonzero on success, zero on failure
+ *
+ * \sa PHYSFS_tell
+ * \sa PHYSFS_seek
+ */
+PHYSFS_DECL int PHYSFS_trunc(PHYSFS_File* handle, PHYSFS_uint64 len);
+
 
 /* Buffering stuff... */
 
@@ -3204,6 +3220,19 @@ typedef struct PHYSFS_Io
      *  \return Total size, in bytes, of the dataset.
      */
     PHYSFS_sint64 (*length)(struct PHYSFS_Io *io);
+
+    /**
+     * \brief Truncate the file to the specified len
+     *
+     * This method truncates the file.
+     *  Lengths larger than the current file length
+     *  should be treated as an error condition.
+     *
+     *   \param io The i/o instance to seek.
+     *   \param len The new length for the file.
+     *  \return non-zero on success, zero on error.
+     */
+    int (*trunc)(struct PHYSFS_Io* io, PHYSFS_uint64 len);
 
     /**
      * \brief Duplicate this i/o instance.

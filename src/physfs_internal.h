@@ -514,6 +514,19 @@ void *__PHYSFS_platformOpenRead(const char *filename);
  */
 void *__PHYSFS_platformOpenWrite(const char *filename);
 
+/*
+ * Open a file for reading and writing. (filename) is in platform-dependent notation. The
+ *  file pointer should be positioned on the first byte of the file.
+ *
+ * The return value will be some platform-specific datatype that is opaque to
+ *  the caller; it could be a (FILE *) under Unix, or a (HANDLE *) under win32.
+ *
+ * Opening a file for write multiple times has undefined results.
+ *
+ * Call PHYSFS_setErrorCode() and return (NULL) if the file can't be opened.
+ */
+void* __PHYSFS_platformOpenReadWrite(const char* filename);
+
 
 /*
  * Open a file for appending. (filename) is in platform-dependent notation. If
@@ -597,6 +610,15 @@ PHYSFS_sint64 __PHYSFS_platformTell(void *opaque);
  *  return the file length in 8-bit bytes.
  */
 PHYSFS_sint64 __PHYSFS_platformFileLength(void *handle);
+
+/*
+ * Truncate the file to a desired length. The length must be less than or equal
+ * To the current file length.
+ *
+ * Return -1 if you can't do it, and call PHYSFS_setErrorCode(). Otherwise,
+ *  return 1.
+ */
+int __PHYSFS_platformTrunc(void* handle, PHYSFS_uint64 len);
 
 
 /*

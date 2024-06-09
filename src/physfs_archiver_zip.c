@@ -444,6 +444,13 @@ static PHYSFS_sint64 ZIP_length(PHYSFS_Io *io)
     return (PHYSFS_sint64) finfo->entry->uncompressed_size;
 } /* ZIP_length */
 
+static int ZIP_trunc(PHYSFS_Io* io, PHYSFS_uint64 len)
+{
+    const ZIPfileinfo* finfo = (ZIPfileinfo*)io->opaque;
+    (PHYSFS_sint64)finfo->entry->uncompressed_size = len;
+    return 1;
+} /* ZIP_trunc */
+
 
 static PHYSFS_Io *zip_get_io(PHYSFS_Io *io, ZIPinfo *inf, ZIPentry *entry);
 
@@ -520,6 +527,7 @@ static const PHYSFS_Io ZIP_Io =
     ZIP_seek,
     ZIP_tell,
     ZIP_length,
+    ZIP_trunc,
     ZIP_duplicate,
     ZIP_flush,
     ZIP_destroy

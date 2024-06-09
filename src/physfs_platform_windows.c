@@ -172,6 +172,19 @@ static PHYSFS_sint64 winGetFileSize(HANDLE h)
     #endif
 } /* winGetFileSize */
 
+static BOOL winTruncate(HANDLE h, PHYSFS_uint64 len) {
+    PHYSFS_sint64 currentPos;
+    if (!winSetFilePointer(h, 0, &currentPos, FILE_CURRENT))
+        return FALSE;
+    if (!winSetFilePointer(h, 0, NULL, FILE_END))
+        return FALSE;
+    if (!SetEndOfFile(h))
+        return FALSE;
+    if (!winSetFilePointer(h, currentPos, NULL, FILE_BEGIN))
+        return FALSE;
+    return TRUE;
+} /* winTruncate */
+
 
 static PHYSFS_ErrorCode errcodeFromWinApiError(const DWORD err)
 {
@@ -739,6 +752,12 @@ void *__PHYSFS_platformOpenWrite(const char *filename)
     return (h == INVALID_HANDLE_VALUE) ? NULL : (void *) h;
 } /* __PHYSFS_platformOpenWrite */
 
+void* __PHYSFS_platformOpenReadWrite(const char* filename)
+{
+    HANDLE h = doOpen(filename, GENERIC_READ | GENERIC_WRITE, OPEN_ALWAYS);
+    return (h == INVALID_HANDLE_VALUE) ? NULL : (void*)h;
+} /* __PHYSFS_platformOpenReadWrite */
+
 
 void *__PHYSFS_platformOpenAppend(const char *filename)
 {
@@ -829,6 +848,13 @@ PHYSFS_sint64 __PHYSFS_platformFileLength(void *opaque)
     const PHYSFS_sint64 retval = winGetFileSize(h);
     BAIL_IF(retval < 0, errcodeFromWinApi(), -1);
     return retval;
+} /* __PHYSFS_platformFileLength */
+
+int __PHYSFS_platformTrunc(void* opaque, PHYSFS_uint64 len)
+{
+    HANDLE h = (HANDLE)opaque;
+    BAIL_IF(!winTruncate(h, len), errcodeFromWinApi(), -1);
+    return 1;
 } /* __PHYSFS_platformFileLength */
 
 

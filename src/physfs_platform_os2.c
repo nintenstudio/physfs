@@ -581,6 +581,15 @@ void *__PHYSFS_platformOpenWrite(const char *filename)
                         OPEN_FLAGS_NOINHERIT | OPEN_SHARE_DENYWRITE);
 } /* __PHYSFS_platformOpenWrite */
 
+void* __PHYSFS_platformOpenReadWrite(const char* filename)
+{
+    return (void*)openFile(filename,
+        OPEN_ACTION_CREATE_IF_NEW,
+        OPEN_FLAGS_FAIL_ON_ERROR | OPEN_FLAGS_NO_LOCALITY |
+        OPEN_FLAGS_NOINHERIT | OPEN_SHARE_DENYWRITE |
+        OPEN_ACCESS_READWRITE);
+} /* __PHYSFS_platformOpenReadWrite */
+
 
 void *__PHYSFS_platformOpenAppend(const char *filename)
 {
@@ -666,6 +675,17 @@ PHYSFS_sint64 __PHYSFS_platformFileLength(void *opaque)
     BAIL_IF(rc != NO_ERROR, errcodeFromAPIRET(rc), -1);
     return ((PHYSFS_sint64) fs.cbFile);
 } /* __PHYSFS_platformFileLength */
+
+int __PHYSFS_platformTrunc(void* opaque, PHYSFS_uint64 len)
+{
+    ULONG temp; // Not testing this, so just in case it doesn't accept null...
+    HFILE hfile = (HFILE)opaque;
+    APIRET rc = DosSetFilePtr(hfile, 0, FILE_END, &temp);
+    BAIL_IF(rc != NO_ERROR, errcodeFromAPIRET(rc), -1);
+    rc = DosWrite(hfile, 0, 0, &temp);
+    BAIL_IF(rc != NO_ERROR, errcodeFromAPIRET(rc), -1);
+    return 1;
+} /* __PHYSFS_platformTrunc */
 
 
 int __PHYSFS_platformFlush(void *opaque)

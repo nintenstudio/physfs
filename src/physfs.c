@@ -190,6 +190,12 @@ static PHYSFS_sint64 nativeIo_length(PHYSFS_Io *io)
     return __PHYSFS_platformFileLength(info->handle);
 } /* nativeIo_length */
 
+static int nativeIo_trunc(PHYSFS_Io* io, PHYSFS_uint64 len)
+{
+    NativeIoInfo* info = (NativeIoInfo*)io->opaque;
+    return __PHYSFS_platformTrunc(info->handle, len) == 1;
+} /* nativeIo_trunc */
+
 static PHYSFS_Io *nativeIo_duplicate(PHYSFS_Io *io)
 {
     NativeIoInfo *info = (NativeIoInfo *) io->opaque;
@@ -219,6 +225,7 @@ static const PHYSFS_Io __PHYSFS_nativeIoInterface =
     nativeIo_seek,
     nativeIo_tell,
     nativeIo_length,
+    nativeIo_trunc,
     nativeIo_duplicate,
     nativeIo_flush,
     nativeIo_destroy
@@ -231,7 +238,7 @@ PHYSFS_Io *__PHYSFS_createNativeIo(const char *path, const int mode)
     void *handle = NULL;
     char *pathdup = NULL;
 
-    assert((mode == 'r') || (mode == 'w') || (mode == 'a'));
+    assert((mode == 'r') || (mode == 'w') || (mode == 'a') || (mode == 'b'));
 
     io = (PHYSFS_Io *) allocator.Malloc(sizeof (PHYSFS_Io));
     GOTO_IF(!io, PHYSFS_ERR_OUT_OF_MEMORY, createNativeIo_failed);
@@ -246,6 +253,8 @@ PHYSFS_Io *__PHYSFS_createNativeIo(const char *path, const int mode)
         handle = __PHYSFS_platformOpenWrite(path);
     else if (mode == 'a')
         handle = __PHYSFS_platformOpenAppend(path);
+    else if (mode == 'b')
+        handle = __PHYSFS_platformOpenReadWrite(path);
 
     GOTO_IF_ERRPASS(!handle, createNativeIo_failed);
 
@@ -320,6 +329,11 @@ static PHYSFS_sint64 memoryIo_length(PHYSFS_Io *io)
     const MemoryIoInfo *info = (MemoryIoInfo *) io->opaque;
     return (PHYSFS_sint64) info->len;
 } /* memoryIo_length */
+
+static int memoryIo_trunc(PHYSFS_Io* io, PHYSFS_uint64 len)
+{
+    BAIL(PHYSFS_ERR_READ_ONLY, 0);
+} /* memoryIo_trunc */
 
 static PHYSFS_Io *memoryIo_duplicate(PHYSFS_Io *io)
 {
@@ -404,6 +418,7 @@ static const PHYSFS_Io __PHYSFS_memoryIoInterface =
     memoryIo_seek,
     memoryIo_tell,
     memoryIo_length,
+    memoryIo_trunc,
     memoryIo_duplicate,
     memoryIo_flush,
     memoryIo_destroy
@@ -466,6 +481,11 @@ static PHYSFS_sint64 handleIo_length(PHYSFS_Io *io)
 {
     return PHYSFS_fileLength((PHYSFS_File *) io->opaque);
 } /* handleIo_length */
+
+static int handleIo_trunc(PHYSFS_Io* io, PHYSFS_uint64 len)
+{
+    return PHYSFS_trunc((PHYSFS_File*)io->opaque, len);
+} /* handleIo_trunc */
 
 static PHYSFS_Io *handleIo_duplicate(PHYSFS_Io *io)
 {
@@ -547,6 +567,7 @@ static const PHYSFS_Io __PHYSFS_handleIoInterface =
     handleIo_seek,
     handleIo_tell,
     handleIo_length,
+    handleIo_trunc,
     handleIo_duplicate,
     handleIo_flush,
     handleIo_destroy
@@ -920,7 +941,7 @@ static DirHandle *openDirectory(PHYSFS_Io *io, const char *d, int forWriting)
                 return retval;
         } /* if */
 
-        io = __PHYSFS_createNativeIo(d, forWriting ? 'w' : 'r');
+        io = __PHYSFS_createNativeIo(d, forWriting ? 'b' : 'r');
         BAIL_IF_ERRPASS(!io, NULL);
         created_io = 1;
     } /* if */
@@ -3164,6 +3185,12 @@ PHYSFS_sint64 PHYSFS_fileLength(PHYSFS_File *handle)
 {
     PHYSFS_Io *io = ((FileHandle *) handle)->io;
     return io->length(io);
+} /* PHYSFS_filelength */
+
+int PHYSFS_trunc(PHYSFS_File* handle, PHYSFS_uint64 len)
+{
+    PHYSFS_Io* io = ((FileHandle*)handle)->io;
+    return io->trunc(io, len);
 } /* PHYSFS_filelength */
 
 

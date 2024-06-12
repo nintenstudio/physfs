@@ -2283,6 +2283,21 @@ PHYSFS_DECL int PHYSFS_mount(const char *newDir,
                              int appendToPath);
 
 /**
+* \fn int PHYSFS_moveInSearchPath(const char *dir, int appendToPath)
+* \brief Move a directory to the beginning or end of the search path.
+* 
+* If the entry does not already exist in the search path, the function fails.
+* 
+*   \param dir directory or archive to move in the path, 
+*                in platform-dependent notation.
+*   \param appendToPath nonzero to append to the search path, zero to prepend.
+*  \return nonzero if added to path, zero on failure. Use PHYSFS_getLastErrorCode()
+*     to obtain the specific error.
+*/
+PHYSFS_DECL int PHYSFS_moveInSearchPath(const char *dir,
+                                       int appendToPath);
+
+/**
  * \fn int PHYSFS_getMountPoint(const char *dir)
  * \brief Determine a mounted archive's mountpoint.
  *
@@ -3988,6 +4003,8 @@ PHYSFS_DECL int PHYSFS_initContext(PHYSFS_Context context, const char *argv0);
 
 
 PHYSFS_DECL int PHYSFS_deinitContext(PHYSFS_Context context);
+
+PHYSFS_DECL int PHYSFS_isContextInit(PHYSFS_Context context);
 
 
 PHYSFS_DECL int PHYSFS_bindContext(PHYSFS_Context context);

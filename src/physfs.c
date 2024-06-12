@@ -49,6 +49,7 @@ typedef struct __PHYSFS_DIRHANDLE__
     char *root;  /* subdirectory of archiver to use as root of archive (NULL for actual root) */
     size_t rootlen;  /* subdirectory of archiver to use as root of archive (NULL for actual root) */
     const PHYSFS_Archiver *funcs;  /* Ptr to archiver info for this handle. */
+    struct __PHYSFS_DIRHANDLE__ *prev;  /* linked list stuff. */
     struct __PHYSFS_DIRHANDLE__ *next;  /* linked list stuff. */
 } DirHandle;
 
@@ -78,6 +79,12 @@ enum {
     PHYSFS_SEARCHPATH_BUCKET_SIZE = 128,
 };
 
+typedef struct __PHYSFS_SEARCHPATHBUCKETENTRY__
+{
+    PHYSFS_uint32 hash;
+    DirHandle* dir;
+} SearchPathBucketEntry;
+
 /* General PhysicsFS state ... */
 typedef struct Context
 {
@@ -85,7 +92,7 @@ typedef struct Context
     ErrState *errorStates;
     DirHandle *searchPath;
     DirHandle* searchPathEnd;
-    PHYSFS_uint32 searchPathBuckets[PHYSFS_SEARCHPATH_BUCKETS][PHYSFS_SEARCHPATH_BUCKET_SIZE];
+    SearchPathBucketEntry searchPathBuckets[PHYSFS_SEARCHPATH_BUCKETS][PHYSFS_SEARCHPATH_BUCKET_SIZE];
     DirHandle *writeDir;
     FileHandle *openWriteList;
     FileHandle *openReadList;
@@ -839,18 +846,18 @@ const char *PHYSFS_getLastError(void)
 
 
 /* MAKE SURE that errorLock is held before calling this! */
-static void freeErrorStates(void)
+static void freeErrorStates(Context* context)
 {
     ErrState *i;
     ErrState *next;
 
-    for (i = boundContext()->errorStates; i != NULL; i = next)
+    for (i = context->errorStates; i != NULL; i = next)
     {
         next = i->next;
         allocator.Free(i);
     } /* for */
 
-    boundContext()->errorStates = NULL;
+    context->errorStates = NULL;
 } /* freeErrorStates */
 
 
@@ -1114,7 +1121,7 @@ static DirHandle *createDirHandle(PHYSFS_Io *io, const char *newDir,
     } /* if */
 
     __PHYSFS_smallFree(tmpmntpnt);
-    dirHandle->dir_crc = crc32buf(dirHandle->dirName, strlen(dirHandle->dirName));
+    dirHandle->dir_crc = nonzerocrc32buf(dirHandle->dirName, strlen(dirHandle->dirName));
     return dirHandle;
 
 badDirHandle:
@@ -1323,21 +1330,21 @@ static int closeFileHandleList(FileHandle **list)
 
 
 /* MAKE SURE you hold the stateLock before calling this! */
-static void freeSearchPath(void)
+static void freeSearchPath(Context* context)
 {
     DirHandle *i;
     DirHandle *next = NULL;
 
-    closeFileHandleList(&boundContext()->openReadList);
+    closeFileHandleList(&context->openReadList);
 
-    if (boundContext()->searchPath != NULL)
+    if (context->searchPath != NULL)
     {
-        for (i = boundContext()->searchPath; i != NULL; i = next)
+        for (i = context->searchPath; i != NULL; i = next)
         {
             next = i->next;
-            freeDirHandle(i, boundContext()->openReadList);
+            freeDirHandle(i, context->openReadList);
         } /* for */
-        boundContext()->searchPath = NULL;
+        context->searchPath = NULL;
     } /* if */
 } /* freeSearchPath */
 
@@ -1384,18 +1391,18 @@ static int doDeregisterArchiver(const size_t idx)
 
 
 /* Does NOT hold the state lock; we're shutting down. */
-static void freeArchivers(void)
+static void freeArchivers(Context* context)
 {
-    while (boundContext()->numArchivers > 0)
+    while (context->numArchivers > 0)
     {
-        if (!doDeregisterArchiver(boundContext()->numArchivers - 1))
+        if (!doDeregisterArchiver(context->numArchivers - 1))
             assert(!"nothing should be mounted during shutdown.");
     } /* while */
 
-    allocator.Free(boundContext()->archivers);
-    allocator.Free(boundContext()->archiveInfo);
-    boundContext()->archivers = NULL;
-    boundContext()->archiveInfo = NULL;
+    allocator.Free(context->archivers);
+    allocator.Free(context->archiveInfo);
+    context->archivers = NULL;
+    context->archiveInfo = NULL;
 } /* freeArchivers */
 
 
@@ -1793,49 +1800,51 @@ int PHYSFS_setRoot(const char *archive, const char *subdir)
     return 1;
 } /* PHYSFS_setRoot */
 
-
-static int doMount(PHYSFS_Io *io, const char *fname,
-                   const char *mountPoint, int appendToPath)
+static int doMount(PHYSFS_Io* io, const char* fname,
+    const char* mountPoint, int appendToPath)
 {
-    DirHandle *dh;
+    DirHandle* dh;
     PHYSFS_uint32 i;
+    PHYSFS_uint32 fname_crc;
+    PHYSFS_uint32 bucket;
 
     BAIL_IF(!fname, PHYSFS_ERR_INVALID_ARGUMENT, 0);
+
+    fname_crc = nonzerocrc32buf(fname, strlen(fname));
+    bucket = fname_crc % PHYSFS_SEARCHPATH_BUCKETS;
 
     if (mountPoint == NULL)
         mountPoint = "/";
 
     __PHYSFS_platformGrabMutex(boundContext()->stateLock);
-    PHYSFS_uint32 fname_crc = crc32buf(fname, strlen(fname));
-    unsigned int bucket = fname_crc % PHYSFS_SEARCHPATH_BUCKETS;
 
     /* already in search path? */
     for (i = 0; i < PHYSFS_SEARCHPATH_BUCKET_SIZE; i++)
     {
         PHYSFS_uint32 hash;
-        hash = boundContext()->searchPathBuckets[bucket][i];
+        hash = boundContext()->searchPathBuckets[bucket][i].hash;
         // We went through all the hashes in this bucket and found an empty one.
         if (hash == 0) {
             break;
-        }
+        } /* if */
         // This archive name is a duplicate, bail out!
         else if (fname_crc == hash) {
             BAIL_MUTEX_ERRPASS(boundContext()->stateLock, 1);
-        }
+        } /* else if */
 
     } /* for */
 
     // If the hash bucket is full, we need to resort to a full linear search.
-    if (i >= PHYSFS_SEARCHPATH_BUCKET_SIZE - 1)
+    if (i >= PHYSFS_SEARCHPATH_BUCKET_SIZE)
     {
         DirHandle* j;
         for (j = boundContext()->searchPath; j != NULL; j = j->next)
         {
             if (fname_crc == j->dir_crc) {
                 BAIL_MUTEX_ERRPASS(boundContext()->stateLock, 1);
-            }
-        }
-    }
+            } /* if */
+        } /* for */
+    } /* if */
 
     dh = createDirHandle(io, fname, mountPoint, 0);
     BAIL_IF_MUTEX_ERRPASS(!dh, boundContext()->stateLock, 0);
@@ -1844,23 +1853,27 @@ static int doMount(PHYSFS_Io *io, const char *fname,
     if (i < PHYSFS_SEARCHPATH_BUCKET_SIZE - 1) {
         // Because of our loop, i is already the index of the next empty spot in
         // the bucket. Insert the hash.
-        boundContext()->searchPathBuckets[bucket][i] = fname_crc;
-    }
+        boundContext()->searchPathBuckets[bucket][i].hash = fname_crc;
+        boundContext()->searchPathBuckets[bucket][i].dir = dh;
+    } /* if */
 
     if (appendToPath)
     {
         if (boundContext()->searchPath == NULL) {
             boundContext()->searchPath = dh;
             boundContext()->searchPathEnd = dh;
-        }
+        } /* if */
         else {
             boundContext()->searchPathEnd->next = dh;
+            dh->prev = boundContext()->searchPathEnd;
             boundContext()->searchPathEnd = dh;
-        }
+        } /* else */
     } /* if */
     else
     {
         dh->next = boundContext()->searchPath;
+        if (boundContext()->searchPath != NULL)
+            boundContext()->searchPath->prev = dh;
         boundContext()->searchPath = dh;
         if (boundContext()->searchPathEnd == NULL)
             boundContext()->searchPathEnd = dh;
@@ -1869,6 +1882,8 @@ static int doMount(PHYSFS_Io *io, const char *fname,
     __PHYSFS_platformReleaseMutex(boundContext()->stateLock);
     return 1;
 } /* doMount */
+
+
 
 
 int PHYSFS_mountIo(PHYSFS_Io *io, const char *fname,
@@ -1936,6 +1951,88 @@ int PHYSFS_mount(const char *newDir, const char *mountPoint, int appendToPath)
 } /* PHYSFS_mount */
 
 
+int PHYSFS_moveInSearchPath(const char* dir, int appendToPath)
+{
+    DirHandle* dh = NULL;
+    PHYSFS_uint32 i;
+    DirHandle* prev = NULL;
+    PHYSFS_uint32 dir_crc;
+    PHYSFS_uint32 bucket;
+
+    BAIL_IF(!dir, PHYSFS_ERR_INVALID_ARGUMENT, 0);
+
+    dir_crc = nonzerocrc32buf(dir, strlen(dir));
+    bucket = dir_crc % PHYSFS_SEARCHPATH_BUCKETS;
+
+    __PHYSFS_platformGrabMutex(boundContext()->stateLock);
+
+    /* already in search path? */
+    for (i = 0; i < PHYSFS_SEARCHPATH_BUCKET_SIZE; i++)
+    {
+        PHYSFS_uint32 hash;
+        hash = boundContext()->searchPathBuckets[bucket][i].hash;
+        // We went through all the hashes in this bucket and found an empty one.
+        if (hash == 0) {
+            break;
+        } /* if */
+        // This archive name is a duplicate, meaning we found it!
+        else if (dir_crc == hash) {
+            dh = boundContext()->searchPathBuckets[bucket][i].dir;
+            break;
+        } /* else if */
+
+    } /* for */
+
+    // If the hash bucket is full, we need to resort to a full linear search.
+    if (i >= PHYSFS_SEARCHPATH_BUCKET_SIZE)
+    {
+        DirHandle* j;
+        for (j = boundContext()->searchPath; j != NULL; j = j->next)
+        {
+            if (dir_crc == j->dir_crc) {
+                dh = j;
+                break;
+            } /* if */
+        } /* for */
+    } /* if */
+
+    BAIL_IF_MUTEX(dh == NULL, PHYSFS_ERR_NOT_MOUNTED, boundContext()->stateLock, 0);
+
+    if (appendToPath) {
+        if (dh != boundContext()->searchPathEnd) {
+            if (dh == boundContext()->searchPath)
+                boundContext()->searchPath = dh->next;
+            if (dh->prev != NULL)
+                dh->prev->next = dh->next;
+            dh->next->prev = dh->prev;
+
+            boundContext()->searchPathEnd->next = dh;
+            dh->prev = boundContext()->searchPathEnd;
+            dh->next = NULL;
+            boundContext()->searchPathEnd = dh;
+        }
+    } /* if */
+    else {
+        if (dh != boundContext()->searchPath) {
+            if (dh == boundContext()->searchPathEnd)
+                boundContext()->searchPathEnd = dh->prev;
+            dh->prev->next = dh->next;
+            if (dh->next != NULL)
+                dh->next->prev = dh->prev;
+
+            dh->next = boundContext()->searchPath;
+            dh->prev = NULL;
+            boundContext()->searchPath->prev = dh;
+            boundContext()->searchPath = dh;
+        }
+    } /* else */
+
+    __PHYSFS_platformReleaseMutex(boundContext()->stateLock);
+
+    return 1;
+} /* PHYSFS_moveInSearchPath */
+
+
 int PHYSFS_addToSearchPath(const char *newDir, int appendToPath)
 {
     return PHYSFS_mount(newDir, NULL, appendToPath);
@@ -1951,29 +2048,84 @@ int PHYSFS_removeFromSearchPath(const char *oldDir)
 int PHYSFS_unmount(const char *oldDir)
 {
     DirHandle *i;
-    DirHandle *prev = NULL;
     DirHandle *next = NULL;
+    DirHandle *prev = NULL;
+    PHYSFS_uint32 oldDir_crc;
+    PHYSFS_uint32 bucket;
+    PHYSFS_uint32 j = 0;
 
     BAIL_IF(oldDir == NULL, PHYSFS_ERR_INVALID_ARGUMENT, 0);
 
+    oldDir_crc = nonzerocrc32buf(oldDir, strlen(oldDir));
+    bucket = oldDir_crc % PHYSFS_SEARCHPATH_BUCKETS;
+
     __PHYSFS_platformGrabMutex(boundContext()->stateLock);
-    for (i = boundContext()->searchPath; i != NULL; i = i->next)
+
+    /* remove from searchpath bucket if present */
+    for (j = 0; j < PHYSFS_SEARCHPATH_BUCKET_SIZE; j++)
     {
-        if (strcmp(i->dirName, oldDir) == 0)
-        {
-            next = i->next;
-            BAIL_IF_MUTEX_ERRPASS(!freeDirHandle(i, boundContext()->openReadList),
-                                boundContext()->stateLock, 0);
+        PHYSFS_uint32 hash;
+        hash = boundContext()->searchPathBuckets[bucket][j].hash;
 
-            if (prev == NULL)
-                boundContext()->searchPath = next;
-            else
-                prev->next = next;
-
-            BAIL_MUTEX_ERRPASS(boundContext()->stateLock, 1);
+        // We found the entry in the bucket.
+        if (oldDir_crc == hash) {
+            break;
         } /* if */
-        prev = i;
     } /* for */
+
+    if (j < PHYSFS_SEARCHPATH_BUCKET_SIZE) {
+        DirHandle* dir = boundContext()->searchPathBuckets[bucket][j].dir;
+        next = dir->next;
+        prev = dir->prev;
+
+        BAIL_IF_MUTEX_ERRPASS(!freeDirHandle(dir, boundContext()->openReadList),
+            boundContext()->stateLock, 0);
+
+        boundContext()->searchPathBuckets[bucket][j].dir = NULL;
+        boundContext()->searchPathBuckets[bucket][j].hash = 0;
+
+        if (prev == NULL) {
+            boundContext()->searchPath = next;
+            boundContext()->searchPath->prev = NULL;
+        } /* if */
+        if (next == NULL) {
+            boundContext()->searchPathEnd = prev;
+            boundContext()->searchPathEnd->next = NULL;
+        } /* if */
+        else if (prev != NULL && next != NULL) {
+            next->prev = prev;
+            prev->next = next;
+        } /* else */
+
+        BAIL_MUTEX_ERRPASS(boundContext()->stateLock, 1);
+    } /* if */
+    else { // Fallback, bucket overflow potentially, or dir is not mounted.
+        for (i = boundContext()->searchPath; i != NULL; i = i->next)
+        {
+            if (strcmp(i->dirName, oldDir) == 0)
+            {
+                next = i->next;
+                prev = i->prev;
+                BAIL_IF_MUTEX_ERRPASS(!freeDirHandle(i, boundContext()->openReadList),
+                    boundContext()->stateLock, 0);
+
+                if (prev == NULL) {
+                    boundContext()->searchPath = next;
+                    boundContext()->searchPath->prev = NULL;
+                } /* if */
+                if (next == NULL) {
+                    boundContext()->searchPathEnd = prev;
+                    boundContext()->searchPathEnd->next = NULL;
+                } /* if */
+                else if (prev != NULL && next != NULL) {
+                    next->prev = prev;
+                    prev->next = next;
+                } /* else */
+
+                BAIL_MUTEX_ERRPASS(boundContext()->stateLock, 1);
+            } /* if */
+        } /* for */
+    } /* else */
 
     BAIL_MUTEX(PHYSFS_ERR_NOT_MOUNTED, boundContext()->stateLock, 0);
 } /* PHYSFS_unmount */
@@ -2420,8 +2572,11 @@ static DirHandle* getRealDirHandles(const char* _fname)
                 head->opaque = i->opaque;
                 head->root = i->root;
                 head->rootlen = i->rootlen;
+                head->prev = NULL;
 
                 head->next = retval;
+                if (retval != NULL)
+                    retval->prev = head;
                 retval = head;
             } /* if */
             else if (verifyPath(i, &arcfname, 0))
@@ -2436,8 +2591,11 @@ static DirHandle* getRealDirHandles(const char* _fname)
                     head->opaque = i->opaque;
                     head->root = i->root;
                     head->rootlen = i->rootlen;
+                    head->prev = NULL;
 
                     head->next = retval;
+                    if (retval != NULL)
+                        retval->prev = head;
                     retval = head;
                 } /* if */
             } /* if */
@@ -3610,9 +3768,9 @@ static int doDeinitContext(Context *context) {
     closeFileHandleList(&context->openWriteList);
     BAIL_IF(!PHYSFS_setWriteDir(NULL), PHYSFS_ERR_FILES_STILL_OPEN, 0);
 
-    freeSearchPath();
-    freeArchivers();
-    freeErrorStates();
+    freeSearchPath(context);
+    freeArchivers(context);
+    freeErrorStates(context);
 
     if (context->baseDir != NULL)
     {
@@ -3710,6 +3868,14 @@ int PHYSFS_deinitContext(PHYSFS_Context _context)
     BAIL_IF(!context->initialized, PHYSFS_ERR_NOT_INITIALIZED, 0);
 
     doDeinitContext(context);
+
+    return 1;
+}
+
+int PHYSFS_isContextInit(PHYSFS_Context _context) {
+    Context* context = (Context*)_context;
+
+    return context->initialized;
 
     return 1;
 }

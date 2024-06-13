@@ -117,9 +117,9 @@ static PHYSFS_sint64 UNPK_length(PHYSFS_Io *io)
 static int UNPK_trunc(PHYSFS_Io* io, PHYSFS_uint64 len)
 {
     const UNPKfileinfo* finfo = (UNPKfileinfo*)io->opaque;
-    (PHYSFS_sint64)finfo->entry->size = len;
+    finfo->entry->size = len;
     return 1;
-} /* UNPK_length */
+} /* UNPK_trunc */
 
 
 static PHYSFS_Io *UNPK_duplicate(PHYSFS_Io *_io)
